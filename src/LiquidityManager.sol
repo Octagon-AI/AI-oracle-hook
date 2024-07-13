@@ -26,6 +26,9 @@ abstract contract LiquidityManager {
         int24 upper;
     }
 
+    event RemoveLiquidityEvent();
+    event AddLiquidityEvent();
+
     int24 constant TICK_SPACING = 60;
     uint160 constant sqrtRatioX96Price = 4339505179874779672736325173248; // 3000 USDC/ETH
 
@@ -76,7 +79,7 @@ abstract contract LiquidityManager {
         s_activeLiquidity[poolId] += liquidity;
         s_activeTickRange[poolId] = TickRange(lower, upper);
 
-        // emit event
+        emit AddLiquidityEvent();
     }
 
     function removeLiquidity(address token0, address token1, uint24 swapFee)
@@ -103,6 +106,8 @@ abstract contract LiquidityManager {
 
         int256 balance0 = BalanceDeltaLibrary.amount0(delta);
         int256 balance1 = BalanceDeltaLibrary.amount1(delta);
+
+        emit RemoveLiquidityEvent();
 
         return (uint256(balance0), uint256(balance1));
     }

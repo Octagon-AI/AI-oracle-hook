@@ -12,15 +12,27 @@ import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {CurrencyLibrary, Currency} from "v4-core/src/types/Currency.sol";
 import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
 import {Deployers} from "v4-core/test/utils/Deployers.sol";
-import {Counter} from "../src/Counter.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
+
+import {AIStrategy} from "../src/AIStrategy.sol";
+import {AIOracleHook} from "../src/AIOracleHook.sol";
 
 contract CounterTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using StateLibrary for IPoolManager;
 
-    Counter hook;
+    address poolManager = address(0x5C038EE8AB7bD7699037E277874F1c611aD0C28F);
+    address lpRouter = address(0x1689E7B1F10000AE47eBfE339a4f69dECd19F602);
+    address swapRouterTest = address(0x7Ae58f10f7849cA6F5fB71b7f45CB416c9204b1e);
+
+    address WETH = 0x7f0f3De05F62867f70A19494243FEED256Ff81ea;
+    address USDC = 0xcF24e75578F8A4e37c826C5582484E4368190F4B;
+
+    uint160 SQRT_PRICE_1_1 = 4339505179874779672736325173248;
+
+    AIStrategy strategy;
+    AIOracleHook hook;
     PoolId poolId;
 
     function setUp() public {
@@ -30,16 +42,15 @@ contract CounterTest is Test, Deployers {
 
         // Deploy the hook to an address with the correct flags
         address flags = address(
-            uint160(
-                Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
-                    | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
-            ) ^ (0x4444 << 144) // Namespace the hook to avoid collisions
+            uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG)
+                ^ (0x4444 << 144) // Namespace the hook to avoid collisions
         );
         deployCodeTo("Counter.sol:Counter", abi.encode(manager), flags);
-        hook = Counter(flags);
+
+        hook = AIOracleHook(flags);
 
         // Create the pool
-        key = PoolKey(currency0, currency1, 3000, 60, IHooks(hook));
+        key = PoolKey(Currency.wrap(WETH), Currency.wrap(USDC), 3000, 60, IHooks(hook));
         poolId = key.toId();
         manager.initialize(key, SQRT_PRICE_1_1, ZERO_BYTES);
 
