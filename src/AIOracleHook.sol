@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {BaseHook} from "v4-periphery/BaseHook.sol";
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
@@ -35,6 +36,8 @@ contract AIOracleHook is BaseHook, LiquidityManager {
 
     IAIStrategy.Predictions private s_activePredictions;
 
+    bool private s_initialized = false;
+
     // TODO: before moodify position:
     // 1. check that the lp range hook is the only one who can provide liquidity
 
@@ -58,11 +61,11 @@ contract AIOracleHook is BaseHook, LiquidityManager {
             beforeInitialize: false,
             afterInitialize: false,
             beforeAddLiquidity: true,
-            afterAddLiquidity: false,
+            afterAddLiquidity: true,
             beforeRemoveLiquidity: true,
-            afterRemoveLiquidity: false,
+            afterRemoveLiquidity: true,
             beforeSwap: true,
-            afterSwap: true,
+            afterSwap: false,
             beforeDonate: false,
             afterDonate: false,
             beforeSwapReturnDelta: false,
@@ -74,6 +77,12 @@ contract AIOracleHook is BaseHook, LiquidityManager {
 
     // -----------------------------------------------
     // NOTE: see IHooks.sol for function documentation
+
+    function provideLiquidity(address token0, address token1, uint256 amount0, uint256 amount1) external {
+        IERC20(token0).transferFrom(msg.sender, address(this), amount0);
+        IERC20(token1).transferFrom(msg.sender, address(this), amount1);
+    }
+
     // -----------------------------------------------
 
     function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, bytes calldata)
@@ -85,14 +94,22 @@ contract AIOracleHook is BaseHook, LiquidityManager {
 
         // ! Check if position range should be updated
         IAIStrategy.Predictions storage activePredictions = s_activePredictions;
-        IAIStrategy.Predictions memory newPredictions = IAIStrategy(aiOracle).getPredictions();
+        // TODO: IAIStrategy.Predictions memory newPredictions = IAIStrategy(aiOracle).getPredictions();
+        IAIStrategy.Predictions memory newPredictions = IAIStrategy.Predictions(0, 600, -600);
 
         if (
             newPredictions.predictedTickUpper != activePredictions.predictedTickUpper
                 || newPredictions.predictedTickLower != activePredictions.predictedTickLower
         ) {
-            (uint256 amount0, uint256 amount1) =
-                removeLiquidity(Currency.unwrap(key.currency0), Currency.unwrap(key.currency1), key.fee);
+            (uint256 amount0, uint256 amount1) = (
+                IERC20(Currency.unwrap(key.currency0)).balanceOf(address(this)),
+                IERC20(Currency.unwrap(key.currency1)).balanceOf(address(this))
+            );
+
+            if (s_initialized) {
+                (amount0, amount1) =
+                    removeLiquidity(Currency.unwrap(key.currency0), Currency.unwrap(key.currency1), key.fee);
+            }
 
             openNewPosition(
                 Currency.unwrap(key.currency0),
@@ -108,19 +125,12 @@ contract AIOracleHook is BaseHook, LiquidityManager {
             activePredictions.predictedTickLower = newPredictions.predictedTickLower;
             activePredictions.predictedFees = newPredictions.predictedFees;
 
+            // TODO: s_initialized = true;
+
             emit UpdatedLpRange();
         }
 
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
-    }
-
-    function afterSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, BalanceDelta, bytes calldata)
-        external
-        override
-        returns (bytes4, int128)
-    {
-        afterSwapCount[key.toId()]++;
-        return (BaseHook.afterSwap.selector, 0);
     }
 
     function beforeAddLiquidity(

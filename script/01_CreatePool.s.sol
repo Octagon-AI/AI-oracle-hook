@@ -14,24 +14,27 @@ contract CreatePoolScript is Script {
     using CurrencyLibrary for Currency;
 
     //addresses with contracts deployed
-    address constant GOERLI_POOLMANAGER = address(0x3A9D48AB9751398BbFa63ad67599Bb04e4BdF98b); //pool manager deployed to GOERLI
-    address constant MUNI_ADDRESS = address(0xbD97BF168FA913607b996fab823F88610DCF7737); //mUNI deployed to GOERLI -- insert your own contract address here
-    address constant MUSDC_ADDRESS = address(0xa468864e673a807572598AB6208E49323484c6bF); //mUSDC deployed to GOERLI -- insert your own contract address here
-    address constant HOOK_ADDRESS = address(0x3CA2cD9f71104a6e1b67822454c725FcaeE35fF6); //address of the hook contract deployed to goerli -- you can use this hook address or deploy your own!
+    address poolManager = address(0xFf34e285F8ED393E366046153e3C16484A4dD674);
+    address lpRouter = address(0xFB3e0C6F74eB1a21CC1Da29aeC80D2Dfe6C9a317);
+    address swapRouter = address(0x9A8ca723F5dcCb7926D00B71deC55c2fEa1F50f7);
 
-    IPoolManager manager = IPoolManager(GOERLI_POOLMANAGER);
+    address WETH = 0x14fDF78D02Ba2B136cac229caB4E78A624Fa09DC;
+    address USDC = 0x693AA12886c4C2De10D0900F507603F041a9ddA9;
+
+    address HOOK_ADDRESS = 0x2C0Cc9960fEDDF68DC51CABD8f1B9Bd0622B0f80;
+
+    IPoolManager manager = IPoolManager(poolManager);
 
     function run() external {
         // sort the tokens!
-        address token0 = uint160(MUSDC_ADDRESS) < uint160(MUNI_ADDRESS) ? MUSDC_ADDRESS : MUNI_ADDRESS;
-        address token1 = uint160(MUSDC_ADDRESS) < uint160(MUNI_ADDRESS) ? MUNI_ADDRESS : MUSDC_ADDRESS;
-        uint24 swapFee = 4000;
-        int24 tickSpacing = 10;
+        address token0 = uint160(USDC) < uint160(WETH) ? USDC : WETH;
+        address token1 = uint160(USDC) < uint160(WETH) ? WETH : USDC;
+        uint24 swapFee = 3000;
+        int24 tickSpacing = 60;
 
-        // floor(sqrt(1) * 2^96)
-        uint160 startingPrice = 79228162514264337593543950336;
-
-        bytes memory hookData = abi.encode(block.timestamp);
+        // 3000 ETH/USDC
+        uint160 startingPrice = 4339505179874779672736325173248; //
+        bytes memory hookData = "";
 
         PoolKey memory pool = PoolKey({
             currency0: Currency.wrap(token0),

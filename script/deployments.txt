@@ -1,0 +1,26 @@
+forge create --rpc-url https://sepolia.rpc.thirdweb.com \
+    --constructor-args 0xFf34e285F8ED393E366046153e3C16484A4dD674 \
+    0xFB3e0C6F74eB1a21CC1Da29aeC80D2Dfe6C9a317 0x9A8ca723F5dcCb7926D00B71deC55c2fEa1F50f7 \
+    --private-key e430797523a3a7dabdbb2623b8eee0ca1343ffa5684c59ceedcff0f10a3e957b \
+    src/LendingPool.sol:LendingPool
+
+
+
+     forge script script/00_Hook.s.sol:HookScript \
+    --rpc-url https://sepolia.rpc.thirdweb.com \
+    --private-key e430797523a3a7dabdbb2623b8eee0ca1343ffa5684c59ceedcff0f10a3e957b \
+    --broadcast
+
+
+HOOK_ADDRESS = 0x2C0Cc9960fEDDF68DC51CABD8f1B9Bd0622B0f80
+
+forge verify-contract \
+    --chain-id 11155111 \
+    --watch \
+    --constructor-args $(cast abi-encode "constructor(address,address,address)" 0xFf34e285F8ED393E366046153e3C16484A4dD674 0xFB3e0C6F74eB1a21CC1Da29aeC80D2Dfe6C9a317 0x9A8ca723F5dcCb7926D00B71deC55c2fEa1F50f7) \
+    --etherscan-api-key N8SP1UH648EFP6486Y2KZA8DYQPU3Y7RRM \
+    0x2C0Cc9960fEDDF68DC51CABD8f1B9Bd0622B0f80 \
+    src/AIOracleHook.sol:AIOracleHook
+
+
+    

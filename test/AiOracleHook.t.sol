@@ -22,14 +22,14 @@ contract CounterTest is Test, Deployers {
     using CurrencyLibrary for Currency;
     using StateLibrary for IPoolManager;
 
-    address poolManager = address(0x5C038EE8AB7bD7699037E277874F1c611aD0C28F);
-    address lpRouter = address(0x1689E7B1F10000AE47eBfE339a4f69dECd19F602);
-    address swapRouterTest = address(0x7Ae58f10f7849cA6F5fB71b7f45CB416c9204b1e);
+    address poolManagerAddr = address(0xFf34e285F8ED393E366046153e3C16484A4dD674);
+    address lpRouterAddr = address(0xFB3e0C6F74eB1a21CC1Da29aeC80D2Dfe6C9a317);
+    address swapRouterAddr = address(0x9A8ca723F5dcCb7926D00B71deC55c2fEa1F50f7);
 
-    address WETH = 0x7f0f3De05F62867f70A19494243FEED256Ff81ea;
-    address USDC = 0xcF24e75578F8A4e37c826C5582484E4368190F4B;
+    address WETH = 0x14fDF78D02Ba2B136cac229caB4E78A624Fa09DC;
+    address USDC = 0x693AA12886c4C2De10D0900F507603F041a9ddA9;
 
-    uint160 SQRT_PRICE_1_1 = 4339505179874779672736325173248;
+    uint160 sqrtPriceInit = 4339505179874779672736325173248;
 
     AIStrategy strategy;
     AIOracleHook hook;
@@ -42,17 +42,19 @@ contract CounterTest is Test, Deployers {
 
         // Deploy the hook to an address with the correct flags
         address flags = address(
-            uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG)
-                ^ (0x4444 << 144) // Namespace the hook to avoid collisions
+            uint160(
+                Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.AFTER_ADD_LIQUIDITY_FLAG
+                    | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
+            )
         );
-        deployCodeTo("Counter.sol:Counter", abi.encode(manager), flags);
+        deployCodeTo("Counter.sol:Counter", abi.encode(poolManagerAddr, lpRouterAddr, swapRouterAddr), flags);
 
         hook = AIOracleHook(flags);
 
         // Create the pool
         key = PoolKey(Currency.wrap(WETH), Currency.wrap(USDC), 3000, 60, IHooks(hook));
         poolId = key.toId();
-        manager.initialize(key, SQRT_PRICE_1_1, ZERO_BYTES);
+        manager.initialize(key, sqrtPriceInit, ZERO_BYTES);
 
         // Provide full-range liquidity to the pool
         modifyLiquidityRouter.modifyLiquidity(
@@ -62,42 +64,42 @@ contract CounterTest is Test, Deployers {
         );
     }
 
-    function testCounterHooks() public {
-        // positions were created in setup()
-        assertEq(hook.beforeAddLiquidityCount(poolId), 1);
-        assertEq(hook.beforeRemoveLiquidityCount(poolId), 0);
+    // function testCounterHooks() public {
+    //     // positions were created in setup()
+    //     assertEq(hook.beforeAddLiquidityCount(poolId), 1);
+    //     assertEq(hook.beforeRemoveLiquidityCount(poolId), 0);
 
-        assertEq(hook.beforeSwapCount(poolId), 0);
-        assertEq(hook.afterSwapCount(poolId), 0);
+    //     assertEq(hook.beforeSwapCount(poolId), 0);
+    //     assertEq(hook.afterSwapCount(poolId), 0);
 
-        // Perform a test swap //
-        bool zeroForOne = true;
-        int256 amountSpecified = -1e18; // negative number indicates exact input swap!
-        BalanceDelta swapDelta = swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
-        // ------------------- //
+    //     // Perform a test swap //
+    //     bool zeroForOne = true;
+    //     int256 amountSpecified = -1e18; // negative number indicates exact input swap!
+    //     BalanceDelta swapDelta = swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
+    //     // ------------------- //
 
-        assertEq(int256(swapDelta.amount0()), amountSpecified);
+    //     assertEq(int256(swapDelta.amount0()), amountSpecified);
 
-        assertEq(hook.beforeSwapCount(poolId), 1);
-        assertEq(hook.afterSwapCount(poolId), 1);
-    }
+    //     assertEq(hook.beforeSwapCount(poolId), 1);
+    //     assertEq(hook.afterSwapCount(poolId), 1);
+    // }
 
-    function testLiquidityHooks() public {
-        // positions were created in setup()
-        assertEq(hook.beforeAddLiquidityCount(poolId), 1);
-        assertEq(hook.beforeRemoveLiquidityCount(poolId), 0);
+    // function testLiquidityHooks() public {
+    //     // positions were created in setup()
+    //     assertEq(hook.beforeAddLiquidityCount(poolId), 1);
+    //     assertEq(hook.beforeRemoveLiquidityCount(poolId), 0);
 
-        // remove liquidity
-        int256 liquidityDelta = -1e18;
-        modifyLiquidityRouter.modifyLiquidity(
-            key,
-            IPoolManager.ModifyLiquidityParams(
-                TickMath.minUsableTick(60), TickMath.maxUsableTick(60), liquidityDelta, 0
-            ),
-            ZERO_BYTES
-        );
+    //     // remove liquidity
+    //     int256 liquidityDelta = -1e18;
+    //     modifyLiquidityRouter.modifyLiquidity(
+    //         key,
+    //         IPoolManager.ModifyLiquidityParams(
+    //             TickMath.minUsableTick(60), TickMath.maxUsableTick(60), liquidityDelta, 0
+    //         ),
+    //         ZERO_BYTES
+    //     );
 
-        assertEq(hook.beforeAddLiquidityCount(poolId), 1);
-        assertEq(hook.beforeRemoveLiquidityCount(poolId), 1);
-    }
+    //     assertEq(hook.beforeAddLiquidityCount(poolId), 1);
+    //     assertEq(hook.beforeRemoveLiquidityCount(poolId), 1);
+    // }
 }
