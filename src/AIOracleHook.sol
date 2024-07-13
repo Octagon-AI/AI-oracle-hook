@@ -10,7 +10,7 @@ import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
 
-contract Counter is BaseHook {
+contract AIOracleHook is BaseHook {
     using PoolIdLibrary for PoolKey;
 
     // NOTE: ---------------------------------------------------------
@@ -23,6 +23,15 @@ contract Counter is BaseHook {
 
     mapping(PoolId => uint256 count) public beforeAddLiquidityCount;
     mapping(PoolId => uint256 count) public beforeRemoveLiquidityCount;
+
+    // TODO: before moodify position:
+    // 1. check that the lp range hook is the only one who can provide liquidity
+
+    // TODO: After modify position:
+    // What to do here
+
+    // TODO: before swap:
+    // 1. Check if the range should be updated
 
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
@@ -55,6 +64,9 @@ contract Counter is BaseHook {
         returns (bytes4, BeforeSwapDelta, uint24)
     {
         beforeSwapCount[key.toId()]++;
+
+        // TODO: Check if position range should be updated
+
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
@@ -74,6 +86,9 @@ contract Counter is BaseHook {
         bytes calldata
     ) external override returns (bytes4) {
         beforeAddLiquidityCount[key.toId()]++;
+
+        // TODO: Check if the range should be updated
+
         return BaseHook.beforeAddLiquidity.selector;
     }
 
