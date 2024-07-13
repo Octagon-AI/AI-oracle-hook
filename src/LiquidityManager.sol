@@ -107,7 +107,10 @@ abstract contract LiquidityManager {
         return (uint256(balance0), uint256(balance1));
     }
 
-    function openNewPosition(address token0, address token1, uint256 amount0, uint24 swapFee) internal {
+    function executeSwap(address token0, address token1, uint256 amount0, uint24 swapFee)
+        internal
+        returns (uint256, uint256)
+    {
         PoolKey memory pool = PoolKey({
             currency0: Currency.wrap(token0),
             currency1: Currency.wrap(token1),
@@ -116,7 +119,30 @@ abstract contract LiquidityManager {
             hooks: IHooks(address(this))
         });
 
-        IERC20(token0).approve(address(lpRouter), amount0);
+        IERC20(token0).approve(address(swapRouter), amount0);
+
+        // ---------------------------- //
+        // Swap 100e18 token0 into token1 //
+        // ---------------------------- //
+        bool zeroForOne = true;
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: zeroForOne,
+            amountSpecified: int256(amount0),
+            sqrtPriceLimitX96: 0 // unlimited impact
+        });
+
+        // in v4, users have the option to receieve native ERC20s or wrapped ERC1155 tokens
+        // here, we'll take the ERC20s
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+
+        bytes memory hookData = new bytes(0);
+        (BalanceDelta delta) = swapRouter.swap(pool, params, testSettings, hookData);
+
+        int256 balance0 = BalanceDeltaLibrary.amount0(delta);
+        int256 balance1 = BalanceDeltaLibrary.amount1(delta);
+
+        return (uint256(balance0), uint256(balance1));
     }
 
     // * UTILITIES --------------------------------------------
