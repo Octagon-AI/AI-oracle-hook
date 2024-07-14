@@ -1,20 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.0;
 
+import "./interfaces/INonfungiblePositionManager.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "v4-periphery/libraries/LiquidityAmounts.sol";
-import {PoolModifyLiquidityTest} from "v4-core/src/test/PoolModifyLiquidityTest.sol";
-import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {CurrencyLibrary, Currency} from "v4-core/src/types/Currency.sol";
-import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
-import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
-import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
-
-import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
-
-import {TickMath} from "./libraries/TickMath.sol";
 
 abstract contract LiquidityManager {
+    INonfungiblePositionManager public positionManager;
+
     struct PoolInfo {
         address token0;
         address token1;
@@ -26,130 +18,91 @@ abstract contract LiquidityManager {
         int24 upper;
     }
 
-    event RemoveLiquidityEvent();
-    event AddLiquidityEvent();
-
-    int24 constant TICK_SPACING = 60;
-    uint160 constant sqrtRatioX96Price = 4339505179874779672736325173248; // 3000 USDC/ETH
-
     PoolInfo public s_activePool;
-    mapping(bytes32 => TickRange) public s_activeTickRange;
-    mapping(bytes32 => uint256) public s_activeLiquidity;
+    TickRange public s_activeTickRange;
+    uint128 public s_activeLiquidity;
 
-    PoolModifyLiquidityTest public lpRouter;
-    PoolSwapTest public swapRouter;
-
-    constructor(address _lpRouter, address _swapRouter) {
-        lpRouter = PoolModifyLiquidityTest(_lpRouter);
-        swapRouter = PoolSwapTest(_swapRouter);
+    constructor(address _positionManager) {
+        positionManager = INonfungiblePositionManager(_positionManager);
     }
 
-    function openNewPosition(
-        address token0,
-        address token1,
-        uint256 amount0,
-        uint256 amount1,
-        uint24 swapFee,
-        int24 lower,
-        int24 upper
-    ) internal {
-        PoolKey memory pool = PoolKey({
-            currency0: Currency.wrap(token0),
-            currency1: Currency.wrap(token1),
-            fee: swapFee,
-            tickSpacing: TICK_SPACING,
-            hooks: IHooks(address(this))
-        });
-
-        bytes memory hookData = new bytes(0);
-
-        uint160 sqrtRatioX96Lower = TickMath.getSqrtRatioAtTick(lower);
-        uint160 sqrtRatioX96Upper = TickMath.getSqrtRatioAtTick(upper);
-
-        uint256 liquidity = LiquidityAmounts.getLiquidityForAmounts(
-            sqrtRatioX96Price, sqrtRatioX96Lower, sqrtRatioX96Upper, amount0, amount1
-        ); // TODO
-
-        IERC20(token0).approve(address(lpRouter), amount0);
-        IERC20(token1).approve(address(lpRouter), amount1);
-
-        
-        lpRouter.modifyLiquidity(pool, IPoolManager.ModifyLiquidityParams(lower, upper, int256(liquidity), 0), hookData);
-
-        bytes32 poolId = keccak256(abi.encodePacked(pool.currency0, pool.currency1, pool.fee));
-        s_activeLiquidity[poolId] += liquidity;
-        s_activeTickRange[poolId] = TickRange(lower, upper);
-
-        emit AddLiquidityEvent();
-    }
-
-    function removeLiquidity(address token0, address token1, uint24 swapFee)
+    function openNewPosition(INonfungiblePositionManager.MintParams memory params)
         internal
-        returns (uint256 amount0, uint256 amount1)
+        returns (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1)
     {
-        PoolKey memory pool = PoolKey({
-            currency0: Currency.wrap(token0),
-            currency1: Currency.wrap(token1),
-            fee: swapFee,
-            tickSpacing: TICK_SPACING,
-            hooks: IHooks(address(this))
-        });
+        (tokenId, liquidity, amount0, amount1) = _addLiquidityInner(params);
 
-        bytes memory hookData = new bytes(0);
-
-        bytes32 poolId = keccak256(abi.encodePacked(pool.currency0, pool.currency1, pool.fee));
-        uint256 liquidity = s_activeLiquidity[poolId];
-        TickRange storage tickRange = s_activeTickRange[poolId];
-
-        BalanceDelta delta = lpRouter.modifyLiquidity(
-            pool, IPoolManager.ModifyLiquidityParams(tickRange.lower, tickRange.upper, -int256(liquidity), 0), hookData
-        );
-
-        int256 balance0 = BalanceDeltaLibrary.amount0(delta);
-        int256 balance1 = BalanceDeltaLibrary.amount1(delta);
-
-        emit RemoveLiquidityEvent();
-
-        return (uint256(balance0), uint256(balance1));
+        s_activePool = PoolInfo({token0: params.token0, token1: params.token1, fee: params.fee});
+        s_activeTickRange = TickRange({lower: params.tickLower, upper: params.tickUpper});
+        s_activeLiquidity = liquidity;
     }
 
-    function executeSwap(address token0, address token1, uint256 amount0, uint24 swapFee)
+    function addLiquidityToPool(uint256 amount)
         internal
-        returns (uint256, uint256)
+        returns (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1)
     {
-        PoolKey memory pool = PoolKey({
-            currency0: Currency.wrap(token0),
-            currency1: Currency.wrap(token1),
-            fee: swapFee,
-            tickSpacing: TICK_SPACING,
-            hooks: IHooks(address(this))
+        // TODO: Swap half of token0 for token1
+
+        (address token0, address token1, uint24 fee) = (s_activePool.token0, s_activePool.token1, s_activePool.fee);
+        (int24 tickLower, int24 tickUpper) = (s_activeTickRange.lower, s_activeTickRange.upper);
+
+        INonfungiblePositionManager.MintParams memory params = INonfungiblePositionManager.MintParams({
+            token0: token0,
+            token1: token1,
+            fee: fee,
+            tickLower: tickLower,
+            tickUpper: tickUpper,
+            amount0Desired: amount,
+            amount1Desired: amount,
+            amount0Min: 0,
+            amount1Min: 0,
+            recipient: address(this),
+            deadline: block.timestamp + 10 // Only in this block
         });
 
-        IERC20(token0).approve(address(swapRouter), amount0);
+        (tokenId, liquidity, amount0, amount1) = _addLiquidityInner(params);
 
-        // ---------------------------- //
-        // Swap 100e18 token0 into token1 //
-        // ---------------------------- //
-        bool zeroForOne = true;
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: zeroForOne,
-            amountSpecified: int256(amount0),
-            sqrtPriceLimitX96: 0 // unlimited impact
-        });
-
-        // in v4, users have the option to receieve native ERC20s or wrapped ERC1155 tokens
-        // here, we'll take the ERC20s
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-
-        bytes memory hookData = new bytes(0);
-        (BalanceDelta delta) = swapRouter.swap(pool, params, testSettings, hookData);
-
-        int256 balance0 = BalanceDeltaLibrary.amount0(delta);
-        int256 balance1 = BalanceDeltaLibrary.amount1(delta);
-
-        return (uint256(balance0), uint256(balance1));
+        s_activeLiquidity += liquidity;
     }
 
-    // * UTILITIES --------------------------------------------
+    function _addLiquidityInner(INonfungiblePositionManager.MintParams memory params)
+        private
+        returns (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1)
+    {
+        IERC20(params.token0).approve(address(positionManager), params.amount0Desired);
+        IERC20(params.token1).approve(address(positionManager), params.amount1Desired);
+
+        (tokenId, liquidity, amount0, amount1) = positionManager.mint(params);
+
+        // ! Keep the remaining funds in the vault instead of returning them to the user
+    }
+
+    function removeLiquidity(
+        uint256 tokenId,
+        uint128 liquidity,
+        uint256 amount0Min,
+        uint256 amount1Min,
+        uint256 deadline
+    ) internal returns (uint256 amount0, uint256 amount1) {
+        INonfungiblePositionManager.DecreaseLiquidityParams memory params = INonfungiblePositionManager
+            .DecreaseLiquidityParams({
+            tokenId: tokenId,
+            liquidity: liquidity,
+            amount0Min: amount0Min,
+            amount1Min: amount1Min,
+            deadline: deadline
+        });
+
+        (amount0, amount1) = positionManager.decreaseLiquidity(params);
+
+        // Collect the fees and remaining liquidity
+        INonfungiblePositionManager.CollectParams memory collectParams = INonfungiblePositionManager.CollectParams({
+            tokenId: tokenId,
+            recipient: msg.sender,
+            amount0Max: type(uint128).max,
+            amount1Max: type(uint128).max
+        });
+
+        positionManager.collect(collectParams);
+    }
 }
