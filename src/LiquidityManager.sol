@@ -73,6 +73,7 @@ abstract contract LiquidityManager {
         IERC20(token0).approve(address(lpRouter), amount0);
         IERC20(token1).approve(address(lpRouter), amount1);
 
+        
         lpRouter.modifyLiquidity(pool, IPoolManager.ModifyLiquidityParams(lower, upper, int256(liquidity), 0), hookData);
 
         bytes32 poolId = keccak256(abi.encodePacked(pool.currency0, pool.currency1, pool.fee));
